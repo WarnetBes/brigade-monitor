@@ -1,0 +1,51 @@
+# Секреты и конфиги
+.env
+*.env
+
+# Telegram сессии — НИКОГДА не заливать в git!
+*.session
+*.session-journal
+session_string.txt
+
+# Экспорты Excel
+exports/
+*.xlsx
+
+# Медиафайлы из Telegram
+media/
+*.jpg
+*.jpeg
+*.png
+*.pdf
+*.ogg
+*.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Логи
+*.log
+logs/
+ocr_log.txt
+
+# База данных
+*.db
+*.sqlite
+tasks.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
