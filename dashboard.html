@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Бригадир — Мониторинг цехов</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#1a1a2e;color:#eee}
+header{background:#16213e;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:1.1em;color:#e94560}
+#clock{font-size:.85em;color:#aaa}
+#urgent-banner{display:none;background:#e94560;color:#fff;padding:10px 20px;font-weight:bold;text-align:center}
+.stats{display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap}
+.stat-card{background:#16213e;border-radius:10px;padding:10px 16px;min-width:120px;text-align:center}
+.stat-card .num{font-size:1.8em;font-weight:bold;color:#e94560}
+.stat-card .lbl{font-size:.75em;color:#aaa;margin-top:3px}
+.filters{display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap;background:#0f3460}
+.filters button{padding:5px 12px;border:none;border-radius:16px;cursor:pointer;font-size:.8em;background:#16213e;color:#eee}
+.filters button.active{background:#e94560;color:#fff}
+#tasks{padding:10px 16px}
+.card{background:#16213e;border-radius:8px;padding:10px;margin-bottom:7px;border-left:4px solid #e94560}
+.card.urgent{border-left-color:red;background:#2a1010}
+.card .meta{font-size:.7em;color:#888;margin-bottom:3px}
+.card .txt{font-size:.9em}
+.dir-b{background:#0f3460;color:#eee;padding:2px 7px;border-radius:9px;font-size:.75em;margin-right:3px}
+.st{padding:2px 8px;border-radius:9px;font-size:.75em;font-weight:bold}
+.st-done{background:#27ae60;color:#fff}
+.st-prog{background:#f39c12;color:#fff}
+.st-delay{background:#e74c3c;color:#fff}
+.st-prob{background:#c0392b;color:#fff}
+.st-wait{background:#7f8c8d;color:#fff}
+.actions{padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:9px 20px;border:none;border-radius:7px;cursor:pointer;font-size:.9em;color:#fff}
+.btn-green{background:#27ae60}
+.btn-blue{background:#0f3460}
+#ocr-row{padding:6px 16px;font-size:.85em}
+#ocr-row input[type=file]{color:#eee}
+</style>
+</head>
+<body>
+<header>
+<h1>&#128230; Бригадир — Мониторинг цехов | Партия Еды</h1>
+<div id="clock"></div>
+</header>
+<div id="urgent-banner">&#128680; СРОЧНО! Есть срочные задачи!</div>
+<div class="stats" id="stats"><div class="stat-card"><div class="num">...</div><div class="lbl">Загрузка</div></div></div>
+<div class="filters">
+<button class="active" onclick="filt(this,'')">Все</button>
+<button onclick="filt(this,'Перемещение')">&#128666; Перемещение</button>
+<button onclick="filt(this,'Растарка')">&#128722; Растарка</button>
+<button onclick="filt(this,'Доделки')">&#128295; Доделки</button>
+<button onclick="filt(this,'Готовая продукция')">&#9989; Готовая</button>
+<button onclick="filt(this,'Сборочная')">&#128736; Сборочная</button>
+</div>
+<div id="tasks"><p style="padding:16px;color:#888">Загрузка...</p></div>
+<div class="actions">
+<button class="btn btn-green" onclick="doExport()">&#128196; Экспорт Excel</button>
+<button class="btn btn-blue" onclick="reload()">&#8635; Обновить</button>
+</div>
+<div id="ocr-row">
+<b>&#128247; Загрузить фото листа заказов (OCR):</b>
+<input type="file" id="ocrf" accept="image/*">
+<button class="btn btn-blue" style="padding:5px 12px" onclick="doOCR()">Распознать</button>
+<span id="ocr-out" style="color:#aaa;margin-left:6px"></span>
+</div>
+<audio id="snd" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAA..." preload="auto"></audio>
+<script>
+var tasks=[],fDir='',lastUrg=0;
+function clock(){document.getElementById('clock').textContent=new Date().toLocaleString('ru-RU');}
+setInterval(clock,1000);clock();
+async function load(){
+try{
+var r=await fetch('/api/tasks'),d=await r.json();
+tasks=d.tasks||[];render();stats();urgent();
+}catch(e){document.getElementById('tasks').innerHTML='<p style="padding:16px;color:#e74c3c">Ошибка загрузки. Сервер запущен?</p>';}
+}
+function render(){
+var t=fDir?tasks.filter(x=>x.direction===fDir):tasks;
+t=[...t].reverse();
+if(!t.length){document.getElementById('tasks').innerHTML='<p style="padding:16px;color:#888">Задач нет</p>';return;}
+document.getElementById('tasks').innerHTML=t.map(x=>{
+var sc='st-wait';
+if(x.status==='Выполнено')sc='st-done';
+else if(x.status==='Выполняется')sc='st-prog';
+else if(x.status==='Задержка')sc='st-delay';
+else if(x.status==='Проблема')sc='st-prob';
+return '<div class="card'+(x.urgent?' urgent':'')+'">'+'<div class="meta">'+(x.source||'').toUpperCase()+' | '+(x.sender||'')+' | '+new Date(x.timestamp).toLocaleString('ru-RU')+'</div>'+'<span class="dir-b">'+(x.direction||'—')+'</span>'+'<span class="st '+sc+'">'+(x.status||'')+'</span>'+(x.urgent?'<span style="color:red;margin-left:6px">&#128680;СРОЧНО</span>':'')+'<div class="txt" style="margin-top:5px">'+esc(x.text||'')+'</div></div>';
+}).join('');
+}
+function stats(){
+var dirs=['Перемещение','Растарка','Доделки','Готовая продукция','Сборочная'];
+var urg=tasks.filter(x=>x.urgent).length;
+var h='<div class="stat-card"><div class="num">'+tasks.length+'</div><div class="lbl">Всего</div></div>';
+h+='<div class="stat-card"><div class="num" style="color:red">'+urg+'</div><div class="lbl">Срочных</div></div>';
+dirs.forEach(function(d){var c=tasks.filter(x=>x.direction===d).length;h+='<div class="stat-card"><div class="num">'+c+'</div><div class="lbl">'+d+'</div></div>';});
+document.getElementById('stats').innerHTML=h;
+}
+function urgent(){
+var u=tasks.filter(x=>x.urgent).length;
+var b=document.getElementById('urgent-banner');
+b.style.display=u>0?'block':'none';
+if(u>lastUrg)try{document.getElementById('snd').play();}catch(e){}
+lastUrg=u;
+}
+function filt(btn,dir){fDir=dir;document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');render();}
+async function doExport(){var r=await fetch('/api/export',{method:'POST'});var d=await r.json();alert('Экспорт: '+(d.path||d.error||JSON.stringify(d)));}
+function reload(){load();}
+async function doOCR(){var f=document.getElementById('ocrf').files[0];if(!f)return;var fd=new FormData();fd.append('file',f);var r=await fetch('/api/ocr',{method:'POST',body:fd});var d=await r.json();document.getElementById('ocr-out').textContent='Строк: '+(d.rows||0);}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+load();setInterval(load,15000);
+</script>
+</body>
+</html>
